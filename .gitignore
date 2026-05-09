@@ -1,0 +1,11 @@
+.DS_Store
+/build
+/deps
+DerivedData/
+xcuserdata/
+*.xcuserstate
+.swiftpm/
+*.swiftpm
+
+# Claude memory in source tree, kept out of the public repo
+/memory/
