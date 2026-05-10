@@ -1,5 +1,6 @@
 import Foundation
 import Darwin
+import os.log
 
 enum DownloadEvent {
     case metadata(title: String, durationSeconds: Double?, thumbnailURL: URL?)
@@ -8,23 +9,23 @@ enum DownloadEvent {
     case failed(message: String)
 }
 
+private let log = OSLog(subsystem: "com.crux.schlonk-pad", category: "engine")
+
 /// Wraps the bundled yt-dlp_macos binary as a subprocess and surfaces lifecycle
 /// events via an AsyncStream.
 ///
-/// We attach the child's stdout/stderr to a pseudo-terminal slave (via openpty)
-/// so the PyInstaller-frozen Python interpreter — which would otherwise
-/// block-buffer stdout when piped — sees a TTY and uses line-buffered I/O.
-/// Without this, every event would arrive in a single burst at process exit
-/// and the progress bar would never move.
+/// The child's stdout/stderr go through a pseudo-terminal slave (openpty) so
+/// the PyInstaller-frozen Python — which would otherwise block-buffer stdout
+/// when piped — sees a TTY and uses line-buffered I/O. The parent reads from
+/// the master via a DispatchSource (more reliable on PTY fds than
+/// FileHandle.readabilityHandler).
 final class EngineRunner {
 
     enum Error: Swift.Error, LocalizedError {
         case binaryMissing
-        case ptyFailed(Int32)
         var errorDescription: String? {
             switch self {
             case .binaryMissing: return "yt-dlp_macos not found in app bundle"
-            case .ptyFailed(let code): return "openpty() failed (errno \(code))"
             }
         }
     }
@@ -42,7 +43,7 @@ final class EngineRunner {
         let executable = self.executable
 
         return AsyncStream { continuation in
-            // Allocate a pseudo-terminal pair.
+            // Allocate PTY pair.
             var master: Int32 = -1
             var slave: Int32 = -1
             guard openpty(&master, &slave, nil, nil, nil) == 0 else {
@@ -51,9 +52,6 @@ final class EngineRunner {
                 continuation.finish()
                 return
             }
-
-            let masterHandle = FileHandle(fileDescriptor: master, closeOnDealloc: false)
-            let slaveHandle = FileHandle(fileDescriptor: slave, closeOnDealloc: false)
 
             let process = Process()
             process.executableURL = executable
@@ -73,8 +71,9 @@ final class EngineRunner {
                 urlString,
             ]
 
-            // PTY merges stderr into the same stream by virtue of both being
-            // wired to the same slave fd.
+            // Hand the slave to the child via FileHandle. Process internally
+            // dup2()'s it onto the child's fd 1 and 2.
+            let slaveHandle = FileHandle(fileDescriptor: slave, closeOnDealloc: false)
             process.standardOutput = slaveHandle
             process.standardError = slaveHandle
             process.standardInput = FileHandle.nullDevice
@@ -82,23 +81,35 @@ final class EngineRunner {
             let outLines = LineBuffer()
             let recent = RingBuffer(capacity: 200)
 
-            masterHandle.readabilityHandler = { handle in
-                let data = handle.availableData
-                if data.isEmpty {
-                    // EOF on master — child closed its slave.
-                    return
+            let readQueue = DispatchQueue(
+                label: "com.crux.schlonk-pad.engine.read",
+                qos: .userInitiated
+            )
+            let readSource = DispatchSource.makeReadSource(
+                fileDescriptor: master,
+                queue: readQueue
+            )
+
+            readSource.setEventHandler {
+                var buf = [UInt8](repeating: 0, count: 8192)
+                let n = buf.withUnsafeMutableBufferPointer { bp -> Int in
+                    Darwin.read(master, bp.baseAddress, bp.count)
                 }
+                if n <= 0 { return }
+                let data = Data(buf.prefix(n))
                 guard let chunk = String(data: data, encoding: .utf8) else { return }
                 for line in outLines.feed(chunk) {
                     recent.append(line)
+                    os_log("yt-dlp: %{public}s", log: log, type: .debug, line)
                     if let event = Self.parseLine(line) {
                         continuation.yield(event)
                     }
                 }
             }
+            readSource.resume()
 
             process.terminationHandler = { proc in
-                masterHandle.readabilityHandler = nil
+                readSource.cancel()
                 close(master)
                 if proc.terminationStatus != 0 {
                     let tail = recent.tail(8).joined(separator: "\n")
@@ -118,11 +129,11 @@ final class EngineRunner {
 
             do {
                 try process.run()
-                // Once the child has its own copy of the slave (via posix_spawn
-                // dup2), close the parent's copy so the master sees EOF when
-                // the child exits.
+                // Child has dup'd slave; close parent's copy so master sees
+                // EOF when child exits.
                 close(slave)
             } catch {
+                readSource.cancel()
                 close(master)
                 close(slave)
                 continuation.yield(.failed(message: error.localizedDescription))
@@ -187,7 +198,7 @@ private final class LineBuffer {
     func feed(_ chunk: String) -> [String] {
         lock.lock(); defer { lock.unlock() }
         let combined = leftover + chunk
-        // PTY emits \r\n line endings; normalize before split.
+        // PTY emits \r\n; normalize before split on \n.
         let normalized = combined.replacingOccurrences(of: "\r\n", with: "\n")
         let parts = normalized.components(separatedBy: "\n")
         leftover = parts.last ?? ""
