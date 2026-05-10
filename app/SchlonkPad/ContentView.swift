@@ -130,7 +130,17 @@ struct ContentView: View {
         .clipShape(RoundedRectangle(cornerRadius: 6))
         .contentShape(Rectangle())
         .onDrag {
-            NSItemProvider(contentsOf: file) ?? NSItemProvider()
+            let provider = NSItemProvider(contentsOf: file) ?? NSItemProvider()
+            // suggestedName drives the filename at the drop destination. macOS
+            // only forbids '/' in filenames; we replace it with '-' and trim
+            // whitespace. Extension is supplied by the registered type id.
+            let cleaned = meta.title
+                .replacingOccurrences(of: "/", with: "-")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !cleaned.isEmpty {
+                provider.suggestedName = cleaned
+            }
+            return provider
         }
     }
 
