@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 enum DownloadEvent {
     case metadata(title: String, durationSeconds: Double?, thumbnailURL: URL?)
@@ -10,19 +11,20 @@ enum DownloadEvent {
 /// Wraps the bundled yt-dlp_macos binary as a subprocess and surfaces lifecycle
 /// events via an AsyncStream.
 ///
-/// Known limitation: the PyInstaller-frozen yt-dlp_macos block-buffers stdout
-/// when not on a TTY, and PYTHONUNBUFFERED is not honored by the frozen
-/// interpreter. This means METADATA / PROGRESS / DONE events tend to arrive
-/// in a burst at process exit rather than streaming in. The fix is a real
-/// pseudo-terminal via openpty() — punted to a follow-up because the previous
-/// `script(1)` wrapper attempt hangs without a controlling TTY.
+/// We attach the child's stdout/stderr to a pseudo-terminal slave (via openpty)
+/// so the PyInstaller-frozen Python interpreter — which would otherwise
+/// block-buffer stdout when piped — sees a TTY and uses line-buffered I/O.
+/// Without this, every event would arrive in a single burst at process exit
+/// and the progress bar would never move.
 final class EngineRunner {
 
     enum Error: Swift.Error, LocalizedError {
         case binaryMissing
+        case ptyFailed(Int32)
         var errorDescription: String? {
             switch self {
             case .binaryMissing: return "yt-dlp_macos not found in app bundle"
+            case .ptyFailed(let code): return "openpty() failed (errno \(code))"
             }
         }
     }
@@ -40,6 +42,19 @@ final class EngineRunner {
         let executable = self.executable
 
         return AsyncStream { continuation in
+            // Allocate a pseudo-terminal pair.
+            var master: Int32 = -1
+            var slave: Int32 = -1
+            guard openpty(&master, &slave, nil, nil, nil) == 0 else {
+                let err = errno
+                continuation.yield(.failed(message: "openpty() failed: errno \(err)"))
+                continuation.finish()
+                return
+            }
+
+            let masterHandle = FileHandle(fileDescriptor: master, closeOnDealloc: false)
+            let slaveHandle = FileHandle(fileDescriptor: slave, closeOnDealloc: false)
+
             let process = Process()
             process.executableURL = executable
 
@@ -49,7 +64,7 @@ final class EngineRunner {
             process.arguments = [
                 "--newline",
                 "--no-warnings",
-                "--no-quiet",        // keep [download] progress alongside --print
+                "--no-quiet",
                 "--no-playlist",
                 "--no-mtime",
                 "-o", outputTemplate,
@@ -58,59 +73,39 @@ final class EngineRunner {
                 urlString,
             ]
 
-            // Best-effort hint to flush sooner. Frozen Python may ignore it.
-            var env = ProcessInfo.processInfo.environment
-            env["PYTHONUNBUFFERED"] = "1"
-            env["PYTHONIOENCODING"] = "utf-8"
-            process.environment = env
-
-            // No stdin — prevents any blocking read by the child.
+            // PTY merges stderr into the same stream by virtue of both being
+            // wired to the same slave fd.
+            process.standardOutput = slaveHandle
+            process.standardError = slaveHandle
             process.standardInput = FileHandle.nullDevice
 
-            let outPipe = Pipe()
-            let errPipe = Pipe()
-            process.standardOutput = outPipe
-            process.standardError = errPipe
-
             let outLines = LineBuffer()
-            let errBuffer = LockedData()
+            let recent = RingBuffer(capacity: 200)
 
-            outPipe.fileHandleForReading.readabilityHandler = { handle in
+            masterHandle.readabilityHandler = { handle in
                 let data = handle.availableData
-                guard !data.isEmpty, let chunk = String(data: data, encoding: .utf8) else { return }
+                if data.isEmpty {
+                    // EOF on master — child closed its slave.
+                    return
+                }
+                guard let chunk = String(data: data, encoding: .utf8) else { return }
                 for line in outLines.feed(chunk) {
+                    recent.append(line)
                     if let event = Self.parseLine(line) {
                         continuation.yield(event)
                     }
                 }
             }
 
-            errPipe.fileHandleForReading.readabilityHandler = { handle in
-                let data = handle.availableData
-                if !data.isEmpty {
-                    errBuffer.append(data)
-                    // yt-dlp's [download] progress lines go to stderr; parse them too.
-                    if let chunk = String(data: data, encoding: .utf8) {
-                        for line in outLines.feed(chunk) {
-                            if let event = Self.parseLine(line) {
-                                continuation.yield(event)
-                            }
-                        }
-                    }
-                }
-            }
-
             process.terminationHandler = { proc in
-                outPipe.fileHandleForReading.readabilityHandler = nil
-                errPipe.fileHandleForReading.readabilityHandler = nil
+                masterHandle.readabilityHandler = nil
+                close(master)
                 if proc.terminationStatus != 0 {
-                    let raw = errBuffer.snapshot()
-                    let msg = String(data: raw, encoding: .utf8)?
-                        .trimmingCharacters(in: .whitespacesAndNewlines)
-                        ?? ""
-                    continuation.yield(.failed(message: msg.isEmpty
+                    let tail = recent.tail(8).joined(separator: "\n")
+                    let msg = tail.isEmpty
                         ? "yt-dlp exited with code \(proc.terminationStatus)"
-                        : msg))
+                        : tail
+                    continuation.yield(.failed(message: msg))
                 }
                 continuation.finish()
             }
@@ -123,7 +118,13 @@ final class EngineRunner {
 
             do {
                 try process.run()
+                // Once the child has its own copy of the slave (via posix_spawn
+                // dup2), close the parent's copy so the master sees EOF when
+                // the child exits.
+                close(slave)
             } catch {
+                close(master)
+                close(slave)
                 continuation.yield(.failed(message: error.localizedDescription))
                 continuation.finish()
             }
@@ -186,6 +187,7 @@ private final class LineBuffer {
     func feed(_ chunk: String) -> [String] {
         lock.lock(); defer { lock.unlock() }
         let combined = leftover + chunk
+        // PTY emits \r\n line endings; normalize before split.
         let normalized = combined.replacingOccurrences(of: "\r\n", with: "\n")
         let parts = normalized.components(separatedBy: "\n")
         leftover = parts.last ?? ""
@@ -193,17 +195,23 @@ private final class LineBuffer {
     }
 }
 
-private final class LockedData {
-    private var data = Data()
+private final class RingBuffer {
+    private var lines: [String] = []
+    private let capacity: Int
     private let lock = NSLock()
 
-    func append(_ chunk: Data) {
+    init(capacity: Int) { self.capacity = capacity }
+
+    func append(_ line: String) {
         lock.lock(); defer { lock.unlock() }
-        data.append(chunk)
+        lines.append(line)
+        if lines.count > capacity {
+            lines.removeFirst(lines.count - capacity)
+        }
     }
 
-    func snapshot() -> Data {
+    func tail(_ n: Int) -> [String] {
         lock.lock(); defer { lock.unlock() }
-        return data
+        return Array(lines.suffix(n))
     }
 }
