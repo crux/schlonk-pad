@@ -47,7 +47,10 @@ struct ContentView: View {
             EmptyView()
         case .fetching:
             VStack(alignment: .leading, spacing: 6) {
-                ProgressView(value: 0).progressViewStyle(.linear)
+                // Indeterminate linear bar — animated stripes signal "alive,
+                // duration unknown." Switches to determinate as soon as the
+                // first progress line arrives.
+                ProgressView().progressViewStyle(.linear)
                 Text("Fetching…").font(.caption).foregroundColor(.secondary)
             }
         case .downloading(let meta, let percent):
