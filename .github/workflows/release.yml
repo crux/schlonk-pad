@@ -1,0 +1,73 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
+
+      - name: Fetch yt-dlp
+        run: bash scripts/fetch-yt-dlp.sh
+
+      - name: Build
+        run: |
+          xcodebuild \
+            -project app/SchlonkPad.xcodeproj \
+            -scheme SchlonkPad \
+            -configuration Release \
+            CONFIGURATION_BUILD_DIR="$PWD/build" \
+            build
+
+      - name: Patch version
+        run: |
+          /usr/libexec/PlistBuddy -c \
+            "Set :CFBundleShortVersionString '${{ env.VERSION }}'" \
+            "build/SchlonkPad.app/Contents/Info.plist"
+
+      - name: Package DMG
+        run: |
+          hdiutil create \
+            -volname "schlonk-pad" \
+            -srcfolder "build/SchlonkPad.app" \
+            -ov -format UDZO \
+            "build/SchlonkPad-${{ env.VERSION }}.dmg"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "schlonk-pad ${{ github.ref_name }}" \
+            --generate-notes \
+            "build/SchlonkPad-${{ env.VERSION }}.dmg"
+
+      - name: Update Homebrew cask
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          VERSION=${{ env.VERSION }}
+          SHA=$(shasum -a 256 "build/SchlonkPad-${VERSION}.dmg" | cut -d' ' -f1)
+
+          git clone \
+            https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/crux/homebrew-tap.git
+
+          bash scripts/write-cask.sh "$VERSION" "$SHA" homebrew-tap/Casks/schlonk-pad.rb
+
+          cd homebrew-tap
+          git config user.email "ci@github.com"
+          git config user.name "GitHub Actions"
+          git add Casks/schlonk-pad.rb
+          git commit -m "schlonk-pad ${VERSION}"
+          git push
