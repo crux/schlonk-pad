@@ -7,5 +7,8 @@ xcuserdata/
 .swiftpm/
 *.swiftpm
 
+# Loose icon scratch files (canonical source lives in assets/)
+/icon-sketch.*
+
 # Claude memory in source tree, kept out of the public repo
 /memory/
