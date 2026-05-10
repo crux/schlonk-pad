@@ -12,7 +12,7 @@ BUILD_REAL = $(shell realpath "$(BUILD_DIR)")
 
 DEV_VERSION = $(shell date +%Y.%m.%d).0
 
-.PHONY: build release dist dist-dev run clean deps update-deps tag icon
+.PHONY: build build-release dist dist-dev run clean deps update-deps tag icon release release-dev
 
 deps: $(YTDLP)
 
@@ -27,7 +27,7 @@ build: deps
 	xcodebuild -project $(PROJECT) -scheme $(SCHEME) -configuration Debug \
 		CONFIGURATION_BUILD_DIR="$(BUILD_REAL)" build
 
-release: deps
+build-release: deps
 	xcodebuild -project $(PROJECT) -scheme $(SCHEME) -configuration Release \
 		CONFIGURATION_BUILD_DIR="$(BUILD_REAL)" build
 
@@ -80,8 +80,32 @@ icon:
 	done
 	@echo "Regenerated $(ICONSET)/icon_*.png from $(ICON_1024)"
 
-# tag creates a local annotated tag only — push manually when ready.
+# --- release orchestration ---------------------------------------------------
+# Stable release:  make release VERSION=v0.YYYYMMDD.N
+#   1. verifies working tree is clean
+#   2. creates an annotated tag locally
+#   3. pushes the tag → triggers release.yml on the remote
+#
+# Dev release:     make release-dev
+#   1. pushes the current main branch → triggers release-dev.yml on the remote
+
+# tag creates a local annotated tag only (no push). Useful when you want to
+# tag now and decide on the push later. Use `make release` for the full flow.
 tag:
 	@test -n "$(VERSION)" || (echo "usage: make tag VERSION=vX.Y.Z"; exit 1)
 	@git diff --quiet && git diff --cached --quiet || (echo "working tree not clean"; exit 1)
 	git tag -a $(VERSION) -m "$(VERSION)"
+
+release:
+	@test -n "$(VERSION)" || (echo "usage: make release VERSION=vX.Y.Z (suggested: v0.YYYYMMDD.N)"; exit 1)
+	@git diff --quiet && git diff --cached --quiet || (echo "working tree not clean"; exit 1)
+	@if git rev-parse --verify "refs/tags/$(VERSION)" >/dev/null 2>&1; then \
+		echo "tag $(VERSION) already exists locally; aborting"; exit 1; \
+	fi
+	git tag -a $(VERSION) -m "$(VERSION)"
+	git push origin $(VERSION)
+	@echo "→ pushed $(VERSION); release.yml is firing on github.com/crux/schlonk-pad/actions"
+
+release-dev:
+	git push origin main
+	@echo "→ pushed main; release-dev.yml is firing on github.com/crux/schlonk-pad/actions"

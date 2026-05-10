@@ -39,6 +39,9 @@ jobs:
           /usr/libexec/PlistBuddy -c \
             "Set :CFBundleShortVersionString '${{ env.VERSION }}'" \
             "build/SchlonkPad.app/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c \
+            "Set :CFBundleVersion '${{ github.run_number }}'" \
+            "build/SchlonkPad.app/Contents/Info.plist"
           mv "build/SchlonkPad.app" "build/SchlonkPad Dev.app"
 
       - name: Package DMG

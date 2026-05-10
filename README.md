@@ -31,16 +31,34 @@ Prerequisites: macOS 13+, Xcode.
     make deps                   # fetch yt-dlp into deps/
     make build                  # debug build
     make run                    # build + launch
-    make release                # release build, no packaging
+    make build-release          # release-config build, no packaging
     make dist VERSION=x.y.z     # release build + DMG (local validation before tagging)
     make clean
+    make icon                   # re-render iconset from assets/icon-1024.png
 
-`bin/` and `.git/` are symlinked to `~/.nosync/projects/schlonk-pad/` to keep build artifacts and git internals off cloud-synced filesystems.
+`build/` and `.git/` are symlinked to `~/.nosync/projects/schlonk-pad/` to keep
+build artifacts and git internals off cloud-synced filesystems.
 
 ## Releases
 
-Dev builds run on every push to main, versioned `YYYY.MM.DD.runNumber`.
-Stable releases are triggered by pushing a `v*` tag (suggested form: `v0.YYYYMMDD.N`).
+Two channels:
+
+| Channel | Tagged version | Trigger | Cask |
+|---|---|---|---|
+| Stable | `vX.Y.Z` (suggested: `v0.YYYYMMDD.N`) | push of a `v*` tag | `Casks/schlonk-pad.rb` |
+| Dev | `YYYY.MM.DD.runNumber` (auto) | every push to `main` | `Casks/schlonk-pad-dev.rb` |
+
+Make targets that drive them:
+
+    make release-dev                    # push main → dev release
+    make release VERSION=v0.20260510.0  # tag + push tag → stable release
+    make tag VERSION=v0.20260510.0      # local tag only, no push
+
+CI (in `.github/workflows/{release,release-dev}.yml`) builds the .app, patches
+`CFBundleShortVersionString` to the version string and `CFBundleVersion` to the
+GitHub Actions `run_number`, packages a DMG, attaches it to a GitHub release,
+and pushes a fresh cask file into the [`crux/homebrew-tap`](https://github.com/crux/homebrew-tap)
+repo. Users get the new build via `brew upgrade --cask schlonk-pad[-dev]`.
 
 ## Known limitations
 
