@@ -38,7 +38,7 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Phase
+    // MARK: - Phase content
 
     @ViewBuilder
     private var phaseContent: some View {
@@ -54,15 +54,14 @@ struct ContentView: View {
                 Text("Fetching…").font(.caption).foregroundColor(.secondary)
             }
         case .downloading(let meta, let percent):
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 8) {
                 ProgressView(value: percent).progressViewStyle(.linear)
-                if !meta.title.isEmpty {
-                    Text(meta.title).font(.caption).foregroundColor(.secondary).lineLimit(1)
-                }
+                infoBlock(meta: meta, size: nil, file: nil)
             }
         case .done(let meta, let file, let size):
-            VStack(spacing: 12) {
-                resultRow(meta: meta, file: file, size: size)
+            VStack(alignment: .leading, spacing: 12) {
+                infoBlock(meta: meta, size: size, file: file)
+                thumbnail(meta: meta, file: file)
                 shareRow(file: file)
             }
         case .failed(let message):
@@ -74,57 +73,63 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Result row
+    // MARK: - Info block (title, duration, size, reveal)
 
-    private func resultRow(meta: DownloadStore.Metadata, file: URL, size: Int64) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            thumbnail(meta: meta, file: file)
-                .frame(width: 96, height: 72)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(meta.title).font(.callout).lineLimit(2)
-                Text(metaLine(duration: meta.durationSeconds, size: size))
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                Button("Reveal in Finder") {
+    private func infoBlock(meta: DownloadStore.Metadata, size: Int64?, file: URL?) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(meta.title)
+                    .font(.callout)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                let line = metaLine(duration: meta.durationSeconds, size: size)
+                if !line.isEmpty {
+                    Text(line).font(.caption).foregroundColor(.secondary)
+                }
+            }
+            if let file = file {
+                Button {
                     NSWorkspace.shared.activateFileViewerSelecting([file])
+                } label: {
+                    Image(systemName: "folder")
+                        .imageScale(.medium)
+                        .foregroundColor(.secondary)
                 }
                 .buttonStyle(.borderless)
-                .font(.caption)
-                .padding(.top, 2)
+                .help("Reveal in Finder")
             }
-            Spacer(minLength: 0)
         }
     }
 
-    @ViewBuilder
+    // MARK: - Thumbnail (full-width, draggable file source)
+
     private func thumbnail(meta: DownloadStore.Metadata, file: URL) -> some View {
-        Group {
-            if let thumbURL = meta.thumbnailURL {
-                AsyncImage(url: thumbURL) { phase in
-                    switch phase {
-                    case .empty:
-                        Rectangle().fill(Color.gray.opacity(0.15))
-                            .overlay(ProgressView().controlSize(.small))
-                    case .success(let image):
-                        image.resizable().aspectRatio(contentMode: .fill)
-                    case .failure:
-                        Rectangle().fill(Color.gray.opacity(0.15))
-                            .overlay(Image(systemName: "film").foregroundColor(.secondary))
-                    @unknown default:
-                        Rectangle().fill(Color.gray.opacity(0.15))
-                    }
+        ZStack {
+            Color.black.opacity(0.05)
+
+            AsyncImage(url: meta.thumbnailURL) { phase in
+                switch phase {
+                case .empty:
+                    ProgressView().controlSize(.small)
+                case .success(let image):
+                    image.resizable().aspectRatio(contentMode: .fit)
+                case .failure:
+                    Image(systemName: "film")
+                        .font(.title)
+                        .foregroundColor(.secondary)
+                @unknown default:
+                    EmptyView()
                 }
-            } else {
-                Rectangle().fill(Color.gray.opacity(0.15))
-                    .overlay(Image(systemName: "film").font(.title2).foregroundColor(.secondary))
             }
         }
+        // Lock the container to 16:9 so layout is predictable; vertical videos
+        // get pillarboxed (centered with empty space on the sides) rather than
+        // cropped.
+        .aspectRatio(16.0 / 9.0, contentMode: .fit)
+        .frame(maxWidth: .infinity)
+        .clipShape(RoundedRectangle(cornerRadius: 6))
         .contentShape(Rectangle())
         .onDrag {
-            // NSItemProvider(contentsOf:) registers a file representation that
-            // browsers and Finder treat as a file drag (not just a URL string).
             NSItemProvider(contentsOf: file) ?? NSItemProvider()
         }
     }
@@ -167,13 +172,13 @@ struct ContentView: View {
         store.submit(urlString: url)
     }
 
-    private func metaLine(duration: Double?, size: Int64) -> String {
+    private func metaLine(duration: Double?, size: Int64?) -> String {
         var parts: [String] = []
         if let d = duration {
             parts.append(formatDuration(d))
         }
-        if size > 0 {
-            parts.append(ByteCountFormatter.string(fromByteCount: size, countStyle: .file))
+        if let s = size, s > 0 {
+            parts.append(ByteCountFormatter.string(fromByteCount: s, countStyle: .file))
         }
         return parts.joined(separator: " · ")
     }
