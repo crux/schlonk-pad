@@ -10,6 +10,8 @@
 		AA00000000000000000000FA /* SchlonkPadApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000007A /* SchlonkPadApp.swift */; };
 		AA000000000000000000010A /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000008A /* ContentView.swift */; };
 		AA000000000000000000011A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000000BA /* Assets.xcassets */; };
+		AA00000000000000000001BA /* DownloadStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000019A /* DownloadStore.swift */; };
+		AA00000000000000000001CA /* EngineRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000001AA /* EngineRunner.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -19,6 +21,8 @@
 		AA000000000000000000009A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		AA00000000000000000000AA /* SchlonkPad.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SchlonkPad.entitlements; sourceTree = "<group>"; };
 		AA00000000000000000000BA /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		AA000000000000000000019A /* DownloadStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadStore.swift; sourceTree = "<group>"; };
+		AA00000000000000000001AA /* EngineRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineRunner.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -53,6 +57,8 @@
 			children = (
 				AA000000000000000000007A /* SchlonkPadApp.swift */,
 				AA000000000000000000008A /* ContentView.swift */,
+				AA000000000000000000019A /* DownloadStore.swift */,
+				AA00000000000000000001AA /* EngineRunner.swift */,
 				AA00000000000000000000BA /* Assets.xcassets */,
 				AA000000000000000000009A /* Info.plist */,
 				AA00000000000000000000AA /* SchlonkPad.entitlements */,
@@ -151,6 +157,8 @@
 			files = (
 				AA00000000000000000000FA /* SchlonkPadApp.swift in Sources */,
 				AA000000000000000000010A /* ContentView.swift in Sources */,
+				AA00000000000000000001BA /* DownloadStore.swift in Sources */,
+				AA00000000000000000001CA /* EngineRunner.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
