@@ -10,5 +10,8 @@ xcuserdata/
 # Loose icon scratch files (canonical source lives in assets/)
 /icon-sketch.*
 
+# Working notes, not for the public repo
+/PROMOTION.md
+
 # Claude memory in source tree, kept out of the public repo
 /memory/
