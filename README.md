@@ -14,9 +14,35 @@ Dev channel (latest builds from main, may be unstable):
 
     brew install --cask crux/tap/schlonk-pad-dev
 
-Both versions co-install; dev installs as `SchlonkPad Dev.app`. Not notarized — the cask strips the Gatekeeper quarantine attribute on install, no manual right-click-and-Open dance required.
+Both versions co-install; dev installs as `SchlonkPad Dev.app`. The cask strips the Gatekeeper quarantine attribute on install — no manual right-click-and-Open dance required, no Apple notarization in the path. (See [Why the warning?](#why-the-warning) below for the rationale.)
 
 Upgrade: `brew upgrade --cask schlonk-pad`. Uninstall: `brew uninstall --cask schlonk-pad`.
+
+## Manual install (no Homebrew)
+
+Brew is the recommended path because it handles the quarantine strip and auto-updates. If you don't use Homebrew, the same DMGs are also published on the [GitHub releases page](https://github.com/crux/schlonk-pad/releases):
+
+1. Download the latest `SchlonkPad-x.y.z.dmg` (stable) or `SchlonkPad-dev-yyyy.mm.dd.n.dmg` (dev).
+2. Open the DMG, drag the app into `/Applications`.
+3. First launch will be blocked by Gatekeeper — see below.
+
+### Why the warning?
+
+When you first launch a manually-installed copy, macOS shows
+*"schlonk-pad can't be opened, the developer cannot be verified"*. That's
+Apple's Gatekeeper. **This project deliberately doesn't go through Apple's
+notarization flow** — notarization means submitting every build to Apple for
+review-and-stapling before it can launch cleanly, which would put Apple in the
+role of gatekeeper for an open-source tool that they don't need to be in.
+
+Two ways past the dialog:
+
+- **One-time bypass**: right-click the app in Finder → **Open** → confirm in the dialog. macOS remembers; subsequent launches just work.
+- **Strip the quarantine attribute** (the same thing the Homebrew cask does automatically):
+
+      xattr -rd com.apple.quarantine /Applications/SchlonkPad.app
+
+The Homebrew cask runs that `xattr` line in its `postflight` hook on every install/upgrade, which is why brew users never see the warning. Manual install is fine if you'd rather skip the terminal route — you just do step 3 once per install.
 
 ## Use
 
