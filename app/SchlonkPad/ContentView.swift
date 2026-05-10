@@ -46,11 +46,10 @@ struct ContentView: View {
         case .idle:
             EmptyView()
         case .fetching:
-            HStack(spacing: 8) {
-                ProgressView().controlSize(.small)
-                Text("Fetching metadata…").font(.caption).foregroundColor(.secondary)
+            VStack(alignment: .leading, spacing: 6) {
+                ProgressView(value: 0).progressViewStyle(.linear)
+                Text("Fetching…").font(.caption).foregroundColor(.secondary)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
         case .downloading(let meta, let percent):
             VStack(alignment: .leading, spacing: 6) {
                 ProgressView(value: percent).progressViewStyle(.linear)
