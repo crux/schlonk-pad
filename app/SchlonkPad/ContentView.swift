@@ -1,18 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Wraps a downloaded file URL so cross-app drags (browsers, Finder) treat
-/// the payload as the actual file rather than just a URL string.
-struct VideoFile: Transferable {
-    let url: URL
-
-    static var transferRepresentation: some TransferRepresentation {
-        FileRepresentation(exportedContentType: .movie) { file in
-            SentTransferredFile(file.url)
-        }
-    }
-}
-
 struct ContentView: View {
     @EnvironmentObject var store: DownloadStore
     @State private var url: String = ""
@@ -131,7 +119,12 @@ struct ContentView: View {
                     .overlay(Image(systemName: "film").font(.title2).foregroundColor(.secondary))
             }
         }
-        .draggable(VideoFile(url: file))
+        .contentShape(Rectangle())
+        .onDrag {
+            // NSItemProvider(contentsOf:) registers a file representation that
+            // browsers and Finder treat as a file drag (not just a URL string).
+            NSItemProvider(contentsOf: file) ?? NSItemProvider()
+        }
     }
 
     // MARK: - Share row
