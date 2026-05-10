@@ -10,14 +10,12 @@ enum DownloadEvent {
 /// Wraps the bundled yt-dlp_macos binary as a subprocess and surfaces lifecycle
 /// events via an AsyncStream.
 ///
-/// Implementation notes:
-/// - We run yt-dlp under `/usr/bin/script -q /dev/null` so it sees a TTY on
-///   stdout. Without that, the PyInstaller-frozen Python block-buffers stdout
-///   (PYTHONUNBUFFERED isn't honored) and the app would only see output at exit.
-/// - `--print` implies `--quiet`, which suppresses the usual `[download]` lines
-///   we parse for progress, so we add `--no-quiet`.
-/// - With the PTY, stderr is merged into the same stream as stdout — we read
-///   both via a single pipe, strip ANSI escape codes, then pattern-match.
+/// Known limitation: the PyInstaller-frozen yt-dlp_macos block-buffers stdout
+/// when not on a TTY, and PYTHONUNBUFFERED is not honored by the frozen
+/// interpreter. This means METADATA / PROGRESS / DONE events tend to arrive
+/// in a burst at process exit rather than streaming in. The fix is a real
+/// pseudo-terminal via openpty() — punted to a follow-up because the previous
+/// `script(1)` wrapper attempt hangs without a controlling TTY.
 final class EngineRunner {
 
     enum Error: Swift.Error, LocalizedError {
@@ -43,15 +41,15 @@ final class EngineRunner {
 
         return AsyncStream { continuation in
             let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/script")
+            process.executableURL = executable
 
             let outputTemplate = outputDir
                 .appendingPathComponent("%(title).200B [%(id)s].%(ext)s")
                 .path
-            let ytdlpArgs = [
+            process.arguments = [
                 "--newline",
                 "--no-warnings",
-                "--no-quiet",
+                "--no-quiet",        // keep [download] progress alongside --print
                 "--no-playlist",
                 "--no-mtime",
                 "-o", outputTemplate,
@@ -59,35 +57,60 @@ final class EngineRunner {
                 "--print", "after_move:DONE %(filepath)s",
                 urlString,
             ]
-            // script -q /dev/null <yt-dlp> <args...>
-            process.arguments = ["-q", "/dev/null", executable.path] + ytdlpArgs
+
+            // Best-effort hint to flush sooner. Frozen Python may ignore it.
+            var env = ProcessInfo.processInfo.environment
+            env["PYTHONUNBUFFERED"] = "1"
+            env["PYTHONIOENCODING"] = "utf-8"
+            process.environment = env
+
+            // No stdin — prevents any blocking read by the child.
+            process.standardInput = FileHandle.nullDevice
 
             let outPipe = Pipe()
+            let errPipe = Pipe()
             process.standardOutput = outPipe
-            process.standardError = outPipe  // merged into the same stream by the PTY anyway
+            process.standardError = errPipe
 
-            let lineBuffer = LineBuffer()
-            let recentLines = RingBuffer(capacity: 200)
+            let outLines = LineBuffer()
+            let errBuffer = LockedData()
 
             outPipe.fileHandleForReading.readabilityHandler = { handle in
                 let data = handle.availableData
                 guard !data.isEmpty, let chunk = String(data: data, encoding: .utf8) else { return }
-                for line in lineBuffer.feed(chunk) {
-                    recentLines.append(line)
+                for line in outLines.feed(chunk) {
                     if let event = Self.parseLine(line) {
                         continuation.yield(event)
                     }
                 }
             }
 
+            errPipe.fileHandleForReading.readabilityHandler = { handle in
+                let data = handle.availableData
+                if !data.isEmpty {
+                    errBuffer.append(data)
+                    // yt-dlp's [download] progress lines go to stderr; parse them too.
+                    if let chunk = String(data: data, encoding: .utf8) {
+                        for line in outLines.feed(chunk) {
+                            if let event = Self.parseLine(line) {
+                                continuation.yield(event)
+                            }
+                        }
+                    }
+                }
+            }
+
             process.terminationHandler = { proc in
                 outPipe.fileHandleForReading.readabilityHandler = nil
+                errPipe.fileHandleForReading.readabilityHandler = nil
                 if proc.terminationStatus != 0 {
-                    let tail = recentLines.tail(8).joined(separator: "\n")
-                    let msg = tail.isEmpty
+                    let raw = errBuffer.snapshot()
+                    let msg = String(data: raw, encoding: .utf8)?
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                        ?? ""
+                    continuation.yield(.failed(message: msg.isEmpty
                         ? "yt-dlp exited with code \(proc.terminationStatus)"
-                        : tail
-                    continuation.yield(.failed(message: msg))
+                        : msg))
                 }
                 continuation.finish()
             }
@@ -163,7 +186,6 @@ private final class LineBuffer {
     func feed(_ chunk: String) -> [String] {
         lock.lock(); defer { lock.unlock() }
         let combined = leftover + chunk
-        // PTY uses \r\n by default; normalize then split on \n.
         let normalized = combined.replacingOccurrences(of: "\r\n", with: "\n")
         let parts = normalized.components(separatedBy: "\n")
         leftover = parts.last ?? ""
@@ -171,23 +193,17 @@ private final class LineBuffer {
     }
 }
 
-private final class RingBuffer {
-    private var lines: [String] = []
-    private let capacity: Int
+private final class LockedData {
+    private var data = Data()
     private let lock = NSLock()
 
-    init(capacity: Int) { self.capacity = capacity }
-
-    func append(_ line: String) {
+    func append(_ chunk: Data) {
         lock.lock(); defer { lock.unlock() }
-        lines.append(line)
-        if lines.count > capacity {
-            lines.removeFirst(lines.count - capacity)
-        }
+        data.append(chunk)
     }
 
-    func tail(_ n: Int) -> [String] {
+    func snapshot() -> Data {
         lock.lock(); defer { lock.unlock() }
-        return Array(lines.suffix(n))
+        return data
     }
 }
