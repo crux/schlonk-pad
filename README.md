@@ -1,6 +1,6 @@
 # schlonk-pad
 
-macOS GUI for grabbing videos from social media posts. Native Swift app wrapping yt-dlp for the download, with a fast-start upload flow to other sites.
+macOS GUI for grabbing videos from social media posts. Includes fast-start upload flow button for other sites, and video can be dragged into posts or any local filesystem location. Native Swift app wrapping yt-dlp for the download.
 
 Sister project to [schlonk](https://github.com/crux/schlonk) (the CLI). They share the name, not the engine.
 
