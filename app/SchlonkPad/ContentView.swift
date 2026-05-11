@@ -146,8 +146,13 @@ struct ContentView: View {
     /// quotes, or trailing dots/spaces. macOS only forbids `/`, but the
     /// drop target is what matters.
     static func sanitizeForCrossPlatformFilename(_ raw: String) -> String {
+        // Base set: chars forbidden on Windows filesystems.
+        // `#` and `%` are also rejected by Teams' upload validation —
+        // they're legal in the filesystem but Teams routes them as
+        // URL-significant. Easiest to strip up front.
         let forbidden: Set<Character> = [
             "/", "\\", ":", "*", "?", "\"", "<", ">", "|",
+            "#", "%",
             "\n", "\r", "\t",
         ]
         var s = String(raw.map { ch -> Character in
