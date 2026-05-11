@@ -130,13 +130,46 @@ struct ContentView: View {
         .clipShape(RoundedRectangle(cornerRadius: 6))
         .contentShape(Rectangle())
         .onDrag {
-            let provider = NSItemProvider(contentsOf: file) ?? NSItemProvider()
             let cleaned = Self.sanitizeForCrossPlatformFilename(meta.title)
-            if !cleaned.isEmpty {
-                provider.suggestedName = cleaned
-            }
-            return provider
+            return Self.dragProvider(for: file, sanitizedBaseName: cleaned)
         }
+    }
+
+    /// Builds an NSItemProvider for dragging `file` out of the app. If the
+    /// sanitized name differs from the on-disk basename we hand the drop
+    /// target a hard-linked copy under the clean name, because many drop
+    /// targets (Teams, Slack, Discord — anything based on Electron's
+    /// libchromiumcontent) ignore `NSItemProvider.suggestedName` and use
+    /// the file URL's `lastPathComponent` directly.
+    static func dragProvider(for file: URL, sanitizedBaseName: String) -> NSItemProvider {
+        let onDiskBase = file.deletingPathExtension().lastPathComponent
+        if sanitizedBaseName.isEmpty || sanitizedBaseName == onDiskBase {
+            return NSItemProvider(contentsOf: file) ?? NSItemProvider()
+        }
+
+        let ext = file.pathExtension
+        let sanitizedFullName = ext.isEmpty ? sanitizedBaseName : "\(sanitizedBaseName).\(ext)"
+
+        // Per-drag temp subdir, so concurrent drags can't collide.
+        let tempRoot = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("schlonk-pad-drag", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try? FileManager.default.createDirectory(
+            at: tempRoot, withIntermediateDirectories: true)
+
+        let dest = tempRoot.appendingPathComponent(sanitizedFullName)
+        do {
+            // Hard link is O(1) on the same volume.
+            try FileManager.default.linkItem(at: file, to: dest)
+        } catch {
+            // Across volumes (rare) the link fails; copy as fallback.
+            try? FileManager.default.copyItem(at: file, to: dest)
+        }
+
+        let provider = NSItemProvider(contentsOf: dest) ?? NSItemProvider()
+        // Set suggestedName too, for drop targets that DO honour it.
+        provider.suggestedName = sanitizedBaseName
+        return provider
     }
 
     /// Returns a copy of `raw` safe to use as a filename across macOS,
