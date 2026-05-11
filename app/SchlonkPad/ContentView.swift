@@ -131,17 +131,47 @@ struct ContentView: View {
         .contentShape(Rectangle())
         .onDrag {
             let provider = NSItemProvider(contentsOf: file) ?? NSItemProvider()
-            // suggestedName drives the filename at the drop destination. macOS
-            // only forbids '/' in filenames; we replace it with '-' and trim
-            // whitespace. Extension is supplied by the registered type id.
-            let cleaned = meta.title
-                .replacingOccurrences(of: "/", with: "-")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let cleaned = Self.sanitizeForCrossPlatformFilename(meta.title)
             if !cleaned.isEmpty {
                 provider.suggestedName = cleaned
             }
             return provider
         }
+    }
+
+    /// Returns a copy of `raw` safe to use as a filename across macOS,
+    /// Windows and Linux destinations. Apps with Windows-lineage drop
+    /// handlers (Teams, Slack, WhatsApp Desktop, etc.) reject filenames
+    /// containing any of `\ / : * ? " < > |`, control characters, smart
+    /// quotes, or trailing dots/spaces. macOS only forbids `/`, but the
+    /// drop target is what matters.
+    static func sanitizeForCrossPlatformFilename(_ raw: String) -> String {
+        let forbidden: Set<Character> = [
+            "/", "\\", ":", "*", "?", "\"", "<", ">", "|",
+            "\n", "\r", "\t",
+        ]
+        var s = String(raw.map { ch -> Character in
+            if forbidden.contains(ch) { return "-" }
+            if let ascii = ch.asciiValue, ascii < 0x20 { return "-" }
+            return ch
+        })
+        // Smart quotes — keep the apostrophe shape, drop the Unicode flavour.
+        s = s
+            .replacingOccurrences(of: "\u{201C}", with: "'")   // “
+            .replacingOccurrences(of: "\u{201D}", with: "'")   // ”
+            .replacingOccurrences(of: "\u{2018}", with: "'")   // ‘
+            .replacingOccurrences(of: "\u{2019}", with: "'")   // ’
+        // Collapse runs of dashes produced by the substitutions.
+        while s.contains("--") {
+            s = s.replacingOccurrences(of: "--", with: "-")
+        }
+        // Windows refuses filenames with trailing dots or spaces.
+        while let last = s.last, last == "." || last == " " {
+            s.removeLast()
+        }
+        // Truncate to a comfortable length under all platforms' limits.
+        let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.count > 180 ? String(trimmed.prefix(180)) : trimmed
     }
 
     // MARK: - Share row
