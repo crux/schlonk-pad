@@ -5,6 +5,7 @@ macOS GUI for grabbing videos from social media posts. Includes fast-start uploa
 ![demo](assets/demo.gif)
 
 *A social-media post pasted into schlonk-pad, downloaded, then dragged into an MS Teams chat. The recipient gets the video file directly — no sign-up, no need to visit the source platform.*
+*Source video: [@effinbirds.com on Bluesky](https://bsky.app/profile/effinbirds.com/post/3mlm6efdu522e).*
 
 Sister project to [schlonk](https://github.com/crux/schlonk) (the CLI). They share the name, not the engine.
 
