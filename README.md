@@ -2,6 +2,10 @@
 
 macOS GUI for grabbing videos from social media posts. Includes fast-start upload flow button for other sites, and video can be dragged into posts or any local filesystem location. Native Swift app wrapping yt-dlp for the download.
 
+![demo](assets/demo.gif)
+
+*A social-media post pasted into schlonk-pad, downloaded, then dragged into an MS Teams chat. The recipient gets the video file directly — no sign-up, no need to visit the source platform.*
+
 Sister project to [schlonk](https://github.com/crux/schlonk) (the CLI). They share the name, not the engine.
 
 ## Installation
