@@ -13,7 +13,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set version
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
@@ -40,12 +40,7 @@ jobs:
             "build/SchlonkPad.app/Contents/Info.plist"
 
       - name: Package DMG
-        run: |
-          hdiutil create \
-            -volname "schlonk-pad" \
-            -srcfolder "build/SchlonkPad.app" \
-            -ov -format UDZO \
-            "build/SchlonkPad-${{ env.VERSION }}.dmg"
+        run: bash scripts/make-dmg.sh "build/SchlonkPad.app" "schlonk-pad" "build/SchlonkPad-${{ env.VERSION }}.dmg"
 
       - name: Create GitHub release
         env:

@@ -37,11 +37,7 @@ ifndef VERSION
 endif
 	xcodebuild -project $(PROJECT) -scheme $(SCHEME) -configuration Release \
 		CONFIGURATION_BUILD_DIR="$(BUILD_REAL)" build
-	hdiutil create \
-		-volname "schlonk-pad" \
-		-srcfolder "$(BUILD_REAL)/$(APP_NAME).app" \
-		-ov -format UDZO \
-		"$(BUILD_REAL)/$(APP_NAME)-$(VERSION).dmg"
+	bash scripts/make-dmg.sh "$(BUILD_REAL)/$(APP_NAME).app" "schlonk-pad" "$(BUILD_REAL)/$(APP_NAME)-$(VERSION).dmg"
 	@echo "Built: $(BUILD_DIR)/$(APP_NAME)-$(VERSION).dmg"
 	@shasum -a 256 "$(BUILD_REAL)/$(APP_NAME)-$(VERSION).dmg"
 
@@ -53,11 +49,7 @@ dist-dev: deps
 		"Set :CFBundleDisplayName 'schlonk-pad (dev)'" \
 		"$(BUILD_REAL)/$(APP_NAME).app/Contents/Info.plist"
 	mv "$(BUILD_REAL)/$(APP_NAME).app" "$(BUILD_REAL)/$(APP_NAME) Dev.app"
-	hdiutil create \
-		-volname "schlonk-pad (dev)" \
-		-srcfolder "$(BUILD_REAL)/$(APP_NAME) Dev.app" \
-		-ov -format UDZO \
-		"$(BUILD_REAL)/$(APP_NAME)-dev-$(DEV_VERSION).dmg"
+	bash scripts/make-dmg.sh "$(BUILD_REAL)/$(APP_NAME) Dev.app" "schlonk-pad (dev)" "$(BUILD_REAL)/$(APP_NAME)-dev-$(DEV_VERSION).dmg"
 	@echo "Built: $(BUILD_DIR)/$(APP_NAME)-dev-$(DEV_VERSION).dmg"
 	@shasum -a 256 "$(BUILD_REAL)/$(APP_NAME)-dev-$(DEV_VERSION).dmg"
 
