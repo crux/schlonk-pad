@@ -42,7 +42,7 @@ role of gatekeeper for an open-source tool that they don't need to be in.
 
 Two ways past the dialog:
 
-- **One-time bypass**: right-click the app in Finder → **Open** → confirm in the dialog. macOS remembers; subsequent launches just work.
+- **Allow it in System Settings** (macOS Sequoia / 15+, where the old right-click → Open trick no longer works): click **Done** on the warning, open **System Settings → Privacy & Security**, scroll to **Security**, click **Open Anyway** next to *"…was blocked…"*, authenticate, then **Open Anyway** once more to confirm. macOS remembers it. *(macOS 14 and earlier: right-click the app in Finder → **Open** → confirm.)*
 - **Strip the quarantine attribute** (the same thing the Homebrew cask does automatically):
 
       xattr -rd com.apple.quarantine /Applications/SchlonkPad.app
