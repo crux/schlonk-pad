@@ -17,9 +17,8 @@ cask "schlonk-pad" do
 
   app "SchlonkPad.app"
 
-  postflight do
-    system_command "/usr/bin/xattr",
-      args: ["-rd", "com.apple.quarantine", "#{appdir}/SchlonkPad.app"]
+  postflight_steps do
+    run "/usr/bin/xattr", args: ["-rd", "com.apple.quarantine", "{{appdir}}/SchlonkPad.app"]
   end
 end
 CASK
